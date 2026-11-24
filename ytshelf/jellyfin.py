@@ -1,11 +1,11 @@
-"""Tell Jellyfin to rescan its YouTube library after a download or delete. That's all this app does in Jellyfin."""
+"""Tell Jellyfin to rescan its YouTube/music libraries after a download or delete. That's all this app does there."""
 import json
 import threading
 import urllib.request
 
 from .config import JELLYFIN_API_KEY, JELLYFIN_URL
 
-LIBRARY_PATH = '/media/youtube'        # where Jellyfin sees the folder
+LIBRARY_PATHS = ('/media/youtube', '/media/music')        # where Jellyfin sees our folders
 
 
 def _req(path, method='GET'):
@@ -17,15 +17,16 @@ def _req(path, method='GET'):
 
 
 def refresh_library():
-    """Rescan the library whose folder is /media/youtube (whole server if it can't be found)."""
+    """Rescan the libraries that hold our folders (the whole server if none can be found)."""
     if not JELLYFIN_API_KEY:
         return 'no JELLYFIN_API_KEY'
-    lib = next((f for f in _req('/Library/VirtualFolders') or []
-                if any(loc.rstrip('/') == LIBRARY_PATH for loc in f.get('Locations') or [])), None)
-    if lib:
+    libs = [f for f in _req('/Library/VirtualFolders') or []
+            if any(loc.rstrip('/') in LIBRARY_PATHS for loc in f.get('Locations') or [])]
+    for lib in libs:
         _req(f"/Items/{lib['ItemId']}/Refresh?Recursive=true&MetadataRefreshMode=Default&ImageRefreshMode=Default",
              'POST')
-        return f"rescanning {lib['Name']}"
+    if libs:
+        return 'rescanning ' + ', '.join(l['Name'] for l in libs)
     _req('/Library/Refresh', 'POST')
     return 'rescanning all libraries'
 

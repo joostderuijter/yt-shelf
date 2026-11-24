@@ -6,7 +6,7 @@
 <title>YouTube shelf</title>
 <style>
   :root { --bg:#1c1c1e; --card:#2b2b2b; --box:rgba(255,255,255,.08); --line:rgba(255,255,255,.07); --text:#f0f0f0;
-          --muted:#a0a0a5; --accent:#ff5c5c; --run:#3b82f6; --ok:#2e9e5b; --err:#ffb4b4; --other:#6b6b70; }
+          --muted:#a0a0a5; --accent:#ff5c5c; --music:#a78bfa; --run:#3b82f6; --ok:#2e9e5b; --err:#ffb4b4; --other:#6b6b70; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
          font:15px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -68,6 +68,16 @@
   .tag { font-size:11px; border-radius:99px; padding:1px 7px; background:var(--box); color:var(--muted); margin-left:4px; white-space:nowrap; }
   .tag.ko { background:#1f3b2b; color:#9fe0b5; }
   .empty { color:var(--muted); padding:30px 0; text-align:center; }
+  .seg { display:flex; background:#1f1f21; border-radius:10px; padding:3px; gap:2px; outline:1px solid var(--line); flex:none; }
+  .seg button { background:none; padding:7px 11px; color:var(--muted); border-radius:8px; }
+  .seg button.on { background:var(--box); color:var(--text); }
+  .tabs { display:flex; gap:6px; margin:22px 0 10px; }
+  .tabs a { padding:7px 14px; border-radius:99px; background:var(--box); color:var(--muted); font-weight:600; font-size:14px; }
+  .tabs a.on { background:var(--text); color:var(--bg); }
+  .album { font-size:13px; color:var(--muted); margin:16px 0 6px; font-weight:600; }
+  .v img.sq, .v .noimg.sq { width:56px; aspect-ratio:1; }
+  .ch .img.sq { aspect-ratio:1; }
+  @media (max-width:560px) { .v img.sq, .v .noimg.sq { width:48px; } }
 </style>
 </head>
 <body>
@@ -79,6 +89,7 @@
   <div class="panel">
     <form class="row" id="addForm">
       <input id="url" placeholder="YouTube link: video, playlist or channel" autocomplete="off" inputmode="url">
+      <div class="seg" id="mode"><button type="button" data-mode="video" class="on">Video</button><button type="button" data-mode="music">Music</button></div>
       <button class="go" id="lookBtn">Look up</button>
     </form>
     <div class="preview" id="preview"></div>
@@ -114,18 +125,20 @@ const thumbUrl = (ch, file) => `/api/thumb/${enc(ch)}/${enc(file)}`;
 let overview = null;
 async function loadOverview() {
   overview = await api('/api/overview');
-  const d = overview.disk, other = Math.max(0, d.used - overview.size);
+  const d = overview.disk, other = Math.max(0, d.used - overview.size - overview.music_size);
   const pct = x => (100 * x / d.total).toFixed(2) + '%';
-  $('#count').textContent = `${overview.videos.toLocaleString('en')} videos · ${overview.channels.length} channels`;
+  $('#count').textContent = `${overview.videos.toLocaleString('en')} videos · ${overview.songs.toLocaleString('en')} songs`;
   $('#disk').innerHTML = `
     <div class="row" style="justify-content:space-between;flex-wrap:wrap">
       <span><span class="big">${size(d.free)}</span> <span class="muted">free of ${size(d.total)}</span></span>
       <span class="muted">${Math.round(100 * d.used / d.total)}% used</span></div>
     <div class="bar" role="img" aria-label="disk usage">
       <i style="width:${pct(overview.size)};background:var(--accent)" title="YouTube ${size(overview.size)}"></i>
+      <i style="width:${pct(overview.music_size)};background:var(--music)" title="Music ${size(overview.music_size)}"></i>
       <i style="width:${pct(other)};background:var(--other)" title="Other files ${size(other)}"></i></div>
     <div class="legend">
       <span><i class="dot" style="background:var(--accent)"></i>YouTube <b>${size(overview.size)}</b></span>
+      <span><i class="dot" style="background:var(--music)"></i>Music <b>${size(overview.music_size)}</b></span>
       <span><i class="dot" style="background:var(--other)"></i>Other files <b>${size(other)}</b></span>
       <span><i class="dot" style="background:var(--box)"></i>Free <b>${size(d.free)}</b></span></div>`;
 }
@@ -133,7 +146,7 @@ async function loadOverview() {
 async function showHome() {
   await loadOverview();
   $('#view').innerHTML = `
-    <h2><span>Channels</span></h2>
+    ${tabs('video')}
     <input id="q" placeholder="Search all videos" style="margin-bottom:12px">
     <div id="results"></div>
     <div class="grid" id="grid">${overview.channels.map(c => `
@@ -159,9 +172,65 @@ async function showHome() {
 async function showChannel(folder) {
   const [c] = await Promise.all([api('/api/channel/' + enc(folder)), loadOverview()]);
   $('#view').innerHTML = `
-    <h2><span><a href="#" class="muted">Channels</a> › ${esc(folder)}</span>
+    <h2><span><a href="#" class="muted">Videos</a> › ${esc(folder)}</span>
       <span class="muted" style="flex:none">${c.videos.length} videos · ${size(c.size)}</span></h2>
     ${c.videos.length ? videoList(c.videos, false) : '<div class="empty">No videos.</div>'}`;
+}
+
+const tabs = on => `<div class="tabs"><a href="#" class="${on === 'video' ? 'on' : ''}">Videos</a>
+  <a href="#music" class="${on === 'music' ? 'on' : ''}">Music</a></div>`;
+const coverUrl = rel => '/api/cover?rel=' + enc(rel);
+
+async function showMusic() {
+  const [m] = await Promise.all([api('/api/music'), loadOverview()]);
+  $('#view').innerHTML = `
+    ${tabs('music')}
+    <input id="q" placeholder="Search songs, artists, albums" style="margin-bottom:12px">
+    <div id="results"></div>
+    <div class="grid" id="grid">${m.artists.map(a => `
+      <a class="ch" href="#artist/${enc(a.artist)}">
+        <div class="img sq" ${a.cover ? `style="background-image:url('${coverUrl(a.cover)}')"` : ''}></div>
+        <div class="t">${esc(a.artist)}</div>
+        <div class="s">${a.songs} song${a.songs === 1 ? '' : 's'} · ${size(a.size)}</div></a>`).join('') ||
+      '<div class="empty">No music yet: paste a link above and pick <b>Music</b>.</div>'}</div>`;
+  let t = null;
+  $('#q').oninput = e => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const q = e.target.value.trim();
+      $('#grid').hidden = !!q;
+      if (!q) { $('#results').innerHTML = ''; return; }
+      const r = await api('/api/search?q=' + enc(q));
+      $('#results').innerHTML = r.songs.length ? songList(r.songs, true) : '<div class="empty">No matches.</div>';
+    }, 250);
+  };
+}
+
+async function showArtist(artist) {
+  const [a] = await Promise.all([api('/api/music/artist/' + enc(artist)), loadOverview()]);
+  $('#view').innerHTML = `
+    <h2><span><a href="#music" class="muted">Music</a> › ${esc(artist)}</span>
+      <span class="muted" style="flex:none">${a.songs.length} songs · ${size(a.size)}</span></h2>
+    ${a.songs.length ? songList(a.songs, false) : '<div class="empty">No songs.</div>'}`;
+}
+
+function songList(songs, withArtist) {
+  let out = '', album = null;
+  const flush = items => items.length ? `<ul class="vids">${items.join('')}</ul>` : '';
+  let items = [];
+  for (const x of songs) {
+    if (!withArtist && x.album !== album) {
+      out += flush(items); items = [];
+      album = x.album;
+      out += `<div class="album">${esc(album || 'Songs')}</div>`;
+    }
+    items.push(`<li class="v" data-rel="${esc(x.rel)}">
+      <img class="sq" loading="lazy" src="${coverUrl(x.rel)}" alt="" onerror="this.outerHTML='<div class=&quot;noimg sq&quot;></div>'">
+      <div class="main"><div class="t">${x.track ? x.track + '. ' : ''}${esc(x.title)}</div>
+        <div class="d">${withArtist ? esc(x.artist) + ' · ' + esc(x.album) + ' · ' : ''}added ${day(x.mtime)} · ${size(x.size)}</div></div>
+      <div class="acts"><button data-act="del">Delete</button></div></li>`);
+  }
+  return out + flush(items);
 }
 
 function videoList(vs, withChannel) {
@@ -182,7 +251,8 @@ function videoList(vs, withChannel) {
 document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-act]');
   if (!b) return;
-  const li = b.closest('.v'), ref = { channel: li.dataset.ch, file: li.dataset.file };
+  const li = b.closest('.v'), ref = li.dataset.rel ? { rel: li.dataset.rel } : { channel: li.dataset.ch, file: li.dataset.file };
+  const delUrl = li.dataset.rel ? '/api/music/delete' : '/api/delete';
   if (b.dataset.act === 'del') {
     if (!b.classList.contains('danger')) {          // first tap arms, second tap deletes
       b.classList.add('danger'); b.textContent = 'Delete for good?';
@@ -190,7 +260,7 @@ document.addEventListener('click', async e => {
       return;
     }
     b.disabled = true;
-    try { await api('/api/delete', ref); li.remove(); loadOverview(); }
+    try { await api(delUrl, ref); li.remove(); loadOverview(); }
     catch (err) { b.textContent = err.message; }
   } else if (b.dataset.act === 'subs') {
     b.disabled = true;
@@ -200,7 +270,15 @@ document.addEventListener('click', async e => {
 });
 
 // ---------------------------------------------------------------- add
-let found = null;
+let found = null, mode = 'video', modeTouched = false;
+function setMode(m) { mode = m; document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === m)); }
+$('#mode').onclick = e => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b) return;
+  modeTouched = true; setMode(b.dataset.mode);
+  if (found) $('#addForm').requestSubmit();          // look it up again for the other library
+};
+$('#url').oninput = e => { if (!modeTouched) setMode(/music\.youtube\.com/.test(e.target.value) ? 'music' : 'video'); };
 $('#addForm').onsubmit = async e => {
   e.preventDefault();
   const url = $('#url').value.trim();
@@ -208,25 +286,26 @@ $('#addForm').onsubmit = async e => {
   $('#lookBtn').disabled = true;
   $('#preview').innerHTML = '<span class="muted">Looking it up… (a big channel takes a few seconds)</span>';
   try {
-    found = await api('/api/resolve', { url });
+    found = await api('/api/resolve', { url, mode });
+    const where = mode === 'music' ? 'in your music' : 'on the server';
     const n = found.entries.length, have = found.entries.filter(x => x.have).length;
     const fresh = found.entries.filter(x => !x.have && !x.queued);
     const head = found.kind === 'video'
-      ? `<b>${esc(found.title)}</b><div class="muted">${esc(found.channel || '')}${have ? ' · already on the server' : ''}</div>`
-      : `<b>${esc(found.title)}</b><div class="muted">${n} videos · ${have} on the server · ${fresh.length} new</div>`;
+      ? `<b>${esc(found.title)}</b><div class="muted">${esc(found.channel || '')}${have ? ' · already ' + where : ''}</div>`
+      : `<b>${esc(found.title)}</b><div class="muted">${n} ${mode === 'music' ? 'songs' : 'videos'} · ${have} ${where} · ${fresh.length} new</div>`;
     $('#preview').innerHTML = `${head}
       ${found.kind === 'list' && fresh.length ? `<ul>${fresh.slice(0, 8).map(x => `<li class="new">${esc(x.title)}</li>`).join('')}
         ${fresh.length > 8 ? `<li>… and ${fresh.length - 8} more</li>` : ''}</ul>` : ''}
       <div class="row" style="margin-top:10px">
-        ${fresh.length ? `<button class="go" id="dlBtn">Download${found.kind === 'list' ? ` ${fresh.length} new` : ''}</button>` :
+        ${fresh.length ? `<button class="go" id="dlBtn">${mode === 'music' ? '🎵 Download as music' : 'Download'}${found.kind === 'list' ? ` (${fresh.length} new)` : ''}</button>` :
                          '<span class="muted">Nothing new to download.</span>'}
         <button class="link" id="cancelPrev">Close</button></div>`;
     $('#cancelPrev').onclick = () => { $('#preview').innerHTML = ''; found = null; };
     if ($('#dlBtn')) $('#dlBtn').onclick = async ev => {
       ev.target.disabled = true;
-      const r = await api('/api/add', { entries: fresh.map(x => ({ id: x.id, title: x.title })) });
+      const r = await api('/api/add', { mode, entries: fresh.map(x => ({ id: x.id, title: x.title, track: x.track })) });
       $('#preview').innerHTML = `<span class="muted">Queued ${r.queued} video${r.queued === 1 ? '' : 's'}.</span>`;
-      $('#url').value = ''; found = null;
+      $('#url').value = ''; found = null; modeTouched = false;
       loadJobs();
     };
   } catch (err) {
@@ -242,7 +321,7 @@ async function loadJobs() {
     const j = await api('/api/jobs'), all = [...j.active, ...j.recent];
     $('#jobsWrap').hidden = !all.length;
     $('#jobs').innerHTML = all.map(x => {
-      const what = x.kind === 'whisper' ? '🎙 ' : '';
+      const what = x.kind === 'whisper' ? '🎙 ' : x.mode === 'music' ? '🎵 ' : '';
       const act = x.state === 'queued' || (x.state === 'running' && x.kind === 'download')
         ? `<button class="link" data-job="cancel" data-id="${x.id}">Cancel</button>`
         : (x.state === 'error' || x.state === 'canceled') ? `<button class="link" data-job="retry" data-id="${x.id}">Retry</button>` : '';
@@ -269,8 +348,8 @@ $('#clearBtn').onclick = async () => { await api('/api/jobs/clear', {}); loadJob
 
 // ---------------------------------------------------------------- routing
 function route() {
-  const m = location.hash.match(/^#ch\/(.+)$/);
-  (m ? showChannel(decodeURIComponent(m[1])) : showHome())
+  const h = location.hash, m = h.match(/^#ch\/(.+)$/), a = h.match(/^#artist\/(.+)$/);
+  (m ? showChannel(decodeURIComponent(m[1])) : a ? showArtist(decodeURIComponent(a[1])) : h === '#music' ? showMusic() : showHome())
     .catch(e => { $('#view').innerHTML = `<div class="empty err">${esc(e.message)}</div>`; });
 }
 window.addEventListener('hashchange', route);
@@ -278,7 +357,7 @@ route();
 loadJobs();
 // shared from the iPhone share sheet / a bookmarklet: /?url=<link>
 const shared = new URLSearchParams(location.search).get('url');
-if (shared) { $('#url').value = shared; history.replaceState(null, '', '/' + location.hash); $('#lookBtn').click(); }
+if (shared) { $('#url').value = shared; $('#url').dispatchEvent(new Event('input')); history.replaceState(null, '', '/' + location.hash); $('#lookBtn').click(); }
 </script>
 </body>
 </html>

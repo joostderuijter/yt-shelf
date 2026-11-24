@@ -6,8 +6,8 @@ import threading
 import time
 from pathlib import Path
 
-from . import ytdl
-from .config import COOKIES, DATA, MEDIA, WHISPER
+from . import music, ytdl
+from .config import COOKIES, DATA, MEDIA, MUSIC, WHISPER
 from .whisper import Transcriber
 
 UPLOADS_TTL = 600           # re-read a channel's upload list when a video isn't in a copy older than this
@@ -23,8 +23,9 @@ def slug(text):
 
 
 class Worker:
-    def __init__(self, db, lib, refresher, log=print):
+    def __init__(self, db, lib, refresher, log=print, mlib=None):
         self.db, self.lib, self.refresher, self.log = db, lib, refresher, log
+        self.mlib = mlib
         self.wake = {'download': threading.Event(), 'whisper': threading.Event()}
         self.procs, self.canceled = {}, set()
         self.map_lock = threading.Lock()
@@ -75,13 +76,15 @@ class Worker:
                 self.log(f'folder {folder} = channel {cid}')
 
     # ------------------------------------------------------------ queue
-    def add(self, entries):
-        """entries: [{'id', 'title', 'url'}]. Skips videos already on disk or queued. -> number queued"""
-        have, queued, n = self.lib.ids(), self.db.active_ids(), 0
+    def add(self, entries, mode='video'):
+        """entries: [{'id', 'title', 'url', 'track'?}]. Skips what's already on disk or queued. -> number queued"""
+        have = self.lib.ids() if mode == 'video' else self.mlib.ids()
+        queued, n = self.db.active_ids(mode=mode), 0
         for e in entries:
             if e['id'] in have or e['id'] in queued:
                 continue
-            if self.db.add_job('download', e['id'], e['url'], e.get('title')):
+            extra = json.dumps({'track': e['track']}) if e.get('track') else None
+            if self.db.add_job('download', e['id'], e['url'], e.get('title'), mode=mode, extra=extra):
                 n += 1
         self.wake['download'].set()
         return n
@@ -176,17 +179,8 @@ class Worker:
             folder, i = f'{base}-{i}', i + 1
         return folder
 
-    def _download(self, job):
-        jid = job['id']
-        set_ = lambda **kw: self.db.set_job(jid, **kw)
-        set_(detail='looking up')
-        info = ytdl.video_info(job['url'])
-        if self.lib.by_id(info['id']):
-            return set_(state='done', progress=100, detail='already on the server', video_id=info['id'])
-        folder, season, number = self.place(info)
-        set_(video_id=info['id'], title=info.get('title'), channel=folder, detail='downloading')
-        out = MEDIA / folder / f'Season {season}'
-        out.mkdir(parents=True, exist_ok=True)
+    @staticmethod
+    def _progress(set_):
         last = [0.0]
 
         def progress(pct, speed, eta):
@@ -198,7 +192,22 @@ class Worker:
                 if eta:
                     bits.append(f'{int(eta) // 60}:{int(eta) % 60:02d} left')
                 set_(progress=pct, detail='downloading ' + ' · '.join(bits))
+        return progress
 
+    def _download(self, job):
+        if job.get('mode') == 'music':
+            return self._download_music(job)
+        jid = job['id']
+        set_ = lambda **kw: self.db.set_job(jid, **kw)
+        set_(detail='looking up')
+        info = ytdl.video_info(job['url'])
+        if self.lib.by_id(info['id']):
+            return set_(state='done', progress=100, detail='already on the server', video_id=info['id'])
+        folder, season, number = self.place(info)
+        set_(video_id=info['id'], title=info.get('title'), channel=folder, detail='downloading')
+        out = MEDIA / folder / f'Season {season}'
+        out.mkdir(parents=True, exist_ok=True)
+        progress = self._progress(set_)
         self.procs[jid] = []
         if jid in self.canceled:
             raise Canceled()
@@ -214,6 +223,38 @@ class Worker:
             self.wake['whisper'].set()
             note = 'Korean subs: Whisper queued'
         set_(state='done', progress=100, path=path, detail=note or 'done')
+
+    def _download_music(self, job):
+        jid = job['id']
+        set_ = lambda **kw: self.db.set_job(jid, **kw)
+        set_(detail='looking up')
+        info = ytdl.video_info(job['url'])
+        if info['id'] in self.mlib.ids():
+            return set_(state='done', progress=100, detail='already in your music', video_id=info['id'])
+        extra = json.loads(job.get('extra') or '{}')
+        m = music.meta(info, extra.get('track'))
+        folder, name = music.out_template(MUSIC, m)
+        set_(video_id=info['id'], title=f"{m['artist']} – {m['title']}", channel=m['artist'], detail='downloading')
+        folder.mkdir(parents=True, exist_ok=True)
+        self.procs[jid] = []
+        if jid in self.canceled:
+            raise Canceled()
+        path = Path(ytdl.download_audio(job['url'], str(folder / name), self._progress(set_), self.procs[jid]))
+        set_(detail='tagging')
+        thumb = path.with_suffix('.jpg')
+        cover = path.with_suffix('.cover.jpg')
+        try:
+            if thumb.exists():
+                music.square_cover(thumb, cover)
+            music.tag(path, m, cover, info['id'])
+            if m['album'] != music.SINGLES and cover.exists() and not (folder / 'folder.jpg').exists():
+                shutil.copyfile(cover, folder / 'folder.jpg')          # album art for Jellyfin's album view
+        finally:
+            thumb.unlink(missing_ok=True)
+            cover.unlink(missing_ok=True)
+        self.mlib.invalidate()
+        self.refresher.soon()
+        set_(state='done', progress=100, path=str(path), detail=f"{m['album']}")
 
     # ------------------------------------------------------------ whisper
     def _whisper(self, job):

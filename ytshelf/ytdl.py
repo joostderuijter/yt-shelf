@@ -105,6 +105,25 @@ def download(url, outtmpl, on_progress=None, proc_ref=None):
                     '--progress-template', 'download:PROG %(progress.downloaded_bytes)s %(progress.total_bytes)s '
                                            '%(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s',
                     '--print', 'after_move:FINAL %(filepath)s', '-o', outtmpl, url]
+    return _run(cmd, on_progress, proc_ref)
+
+
+PROGRESS = ['--newline', '--progress', '--progress-template',
+            'download:PROG %(progress.downloaded_bytes)s %(progress.total_bytes)s '
+            '%(progress.total_bytes_estimate)s %(progress.speed)s %(progress.eta)s',
+            '--print', 'after_move:FINAL %(filepath)s']
+
+
+def download_audio(url, outtmpl, on_progress=None, proc_ref=None):
+    """Audio only: YouTube's AAC track as .m4a (no re-encode; only converted if there is none), plus the thumbnail
+    as .jpg next to it (the caller crops it into square cover art). -> final file path"""
+    cmd = base() + PROGRESS + ['--no-playlist', '-f', 'ba[ext=m4a]/ba', '-x', '--audio-format', 'm4a',
+                               '--write-thumbnail', '--convert-thumbnails', 'jpg', '-o', outtmpl,
+                               '-o', 'thumbnail:' + outtmpl, url]
+    return _run(cmd, on_progress, proc_ref)
+
+
+def _run(cmd, on_progress=None, proc_ref=None):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     if proc_ref is not None:
         proc_ref.append(p)

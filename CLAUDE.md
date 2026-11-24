@@ -15,6 +15,17 @@ Before this app the user ran yt-dlp by hand (see "Folder layout").
 - Show disk space (total/used/free + YouTube's share) on the page.
 - Stale `.part` leftovers older than 2 days are removed at startup.
 
+## Music (added 2026-11-24)
+- Same app, "Music" switch on the download box (auto for music.youtube.com links) and a Music tab.
+- Folder `/mnt/content1/music` (created by me, joost-owned) mounted at `/media/music`, READ-WRITE. Jellyfin needs
+  the same folder mounted at `/media/music` and a "Music" library on it; the user sets that up (we never touch
+  Jellyfin's config).
+- Audio only: YouTube's own AAC track (m4a, ~128 kbps, no re-encoding). Tags with mutagen (`music.py`): YouTube
+  Music metadata when there is any (artist, track, album, year); else the title is split ("A - T", "A _ T", "A 'T'")
+  and the channel name cleaned ("- Topic", VEVO). Thumbnail cropped square = embedded cover (+ folder.jpg per album).
+- Layout `<Artist>/<Album or Singles>/<NN - >Title [id].m4a`. A YouTube Music album link ("Album - ..." playlist) gives
+  track numbers. Playlists just download songs (no Jellyfin playlists; user's choice). No Whisper for music.
+
 ## Folder layout (= the user's old yt-dlp commands)
 `<channel>/Season 1/S01E0443 - <title> [<videoId>].mkv` + `.webp` thumbnail + `.ko.srt`, subs and thumbnail also
 embedded. Old command: `yt-dlp --cookies ~/cookies.txt --playlist-reverse --write-subs --sub-langs ko --sub-format srt

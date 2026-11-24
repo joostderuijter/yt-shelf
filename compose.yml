@@ -14,6 +14,7 @@ services:
       TZ: ${TZ:-Europe/Amsterdam}
       YTSHELF_DATA: /data
       YTSHELF_MEDIA: /media/youtube
+      YTSHELF_MUSIC: /media/music
       YTSHELF_COOKIES: /cookies.txt
       YTSHELF_MAX_HEIGHT: ${YTSHELF_MAX_HEIGHT:-1080}
       YTSHELF_SUB_LANG: ${YTSHELF_SUB_LANG:-ko}                    # real subtitles only, never auto-generated
@@ -26,6 +27,7 @@ services:
       - ./data:/data                                  # queue DB, Whisper model, cookies copy
       # Jellyfin's YouTube folder, at the same path Jellyfin sees it. READ-WRITE: this app downloads and deletes here.
       - /mnt/content1/youtube:/media/youtube
+      - /mnt/content1/music:/media/music              # music (audio only), also READ-WRITE
       - /home/joost/cookies.txt:/cookies.txt:ro       # YouTube cookies (same file the manual yt-dlp commands used)
     networks: [caddy]
     labels:

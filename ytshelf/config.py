@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 MEDIA = Path(os.environ.get('YTSHELF_MEDIA', '/media/youtube'))      # the folder Jellyfin's YouTube library reads
+MUSIC = Path(os.environ.get('YTSHELF_MUSIC', '/media/music'))       # Jellyfin music library folder
 DATA = Path(os.environ.get('YTSHELF_DATA', '/data'))                 # queue DB, cookies copy, Whisper models
 COOKIES = Path(os.environ.get('YTSHELF_COOKIES', '/cookies.txt'))    # Netscape cookies.txt for YouTube (optional)
 MAX_HEIGHT = int(os.environ.get('YTSHELF_MAX_HEIGHT', '1080'))
