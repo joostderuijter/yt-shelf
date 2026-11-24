@@ -18,8 +18,10 @@ Before this app the user ran yt-dlp by hand (see "Folder layout").
 ## Music (added 2026-11-24)
 - Same app, "Music" switch on the download box (auto for music.youtube.com links) and a Music tab.
 - Folder `/mnt/content1/music` (created by me, joost-owned) mounted at `/media/music`, READ-WRITE. Jellyfin needs
-  the same folder mounted at `/media/music` and a "Music" library on it; the user sets that up (we never touch
-  Jellyfin's config).
+  the same folder at `/media/music`: on 2026-11-24, at the user's request, I added `- /mnt/content1/music:/media/music:ro`
+  to `/srv/jellyfin/compose.yml` (backup: `compose.yml.bak-20261124`), restarted Jellyfin (user OK'd interrupting
+  playback) and created library "Music" (type music) via the API with the Audio library's options. Otherwise
+  Jellyfin's config stays off-limits.
 - Audio only: YouTube's own AAC track (m4a, ~128 kbps, no re-encoding). Tags with mutagen (`music.py`): YouTube
   Music metadata when there is any (artist, track, album, year); else the title is split ("A - T", "A _ T", "A 'T'")
   and the channel name cleaned ("- Topic", VEVO). Thumbnail cropped square = embedded cover (+ folder.jpg per album).

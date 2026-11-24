@@ -36,7 +36,7 @@ def test_clean_title():
 def test_out_template(tmp_path):
     d, name = music.out_template(tmp_path, {'artist': 'AC/DC', 'album': 'Back: in Black', 'title': 'Hells "Bells"',
                                             'track': 1})
-    assert d == tmp_path / 'ACDC' / 'Back in Black' and name == '01 - Hells Bells [%(id)s].%(ext)s'
+    assert d == tmp_path / 'AC - DC' / 'Back in Black' and name == '01 - Hells Bells [%(id)s].%(ext)s'
     d, name = music.out_template(tmp_path, {'artist': 'IU', 'album': 'Singles', 'title': '밤편지', 'track': None})
     assert d == tmp_path / 'IU' / 'Singles' and name == '밤편지 [%(id)s].%(ext)s'
 
@@ -66,3 +66,10 @@ def test_modes_dedupe_separately(tmp_path):
     assert db.add_job('download', 'aaaaaaaaaaa', 'u', mode='music')          # same video, other library: fine
     assert db.add_job('download', 'aaaaaaaaaaa', 'u', mode='music') is None
     assert db.active_ids(mode='music') == {'aaaaaaaaaaa'}
+
+
+def test_safe_names():
+    assert music.safe('Ed Sheeran / John Mayer') == 'Ed Sheeran - John Mayer'
+    assert music.safe('Studiosessie | 101Barz') == 'Studiosessie - 101Barz'
+    assert music.safe('alt:lab:en:vy') == 'altlabenvy'
+    assert music.safe('  ') == 'Unknown'

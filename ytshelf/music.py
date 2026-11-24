@@ -24,7 +24,9 @@ CHANNEL_NOISE = re.compile(r'\s*(?:- topic|vevo|official(?: youtube channel)?|ê³
 
 def safe(name, fallback='Unknown'):
     """A folder/file name: no path separators or characters Windows/SMB clients choke on."""
-    s = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '', name or '').strip().strip('.')
+    s = re.sub(r'\s*[\\/|]\s*', ' - ', name or '')                       # "A / B" -> "A - B"
+    s = re.sub(r'[:*?"<>\x00-\x1f]', '', s)
+    s = re.sub(r'\s+', ' ', s).strip().strip('.-').strip()
     return s[:120] or fallback
 
 
