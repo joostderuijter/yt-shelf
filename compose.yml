@@ -29,7 +29,7 @@ services:
       - /home/joost/cookies.txt:/cookies.txt:ro       # YouTube cookies (same file the manual yt-dlp commands used)
     networks: [caddy]
     labels:
-      caddy: youtube.joost.im
+      caddy: yt.joost.im
       caddy.reverse_proxy: "{{upstreams 8780}}"
       caddy.tls: internal
     deploy:

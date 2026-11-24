@@ -1,7 +1,7 @@
 # yt-shelf: YouTube downloads for Jellyfin
 
 ## Goal
-A small web app on the home server (https://youtube.joost.im, Tailscale only, no auth by design) to download YouTube
+A small web app on the home server (https://yt.joost.im, Tailscale only, no auth by design) to download YouTube
 videos, playlists or whole channels into Jellyfin's YouTube library, see what's there, and delete videos.
 Before this app the user ran yt-dlp by hand (see "Folder layout").
 
@@ -35,7 +35,7 @@ embedded. Old command: `yt-dlp --cookies ~/cookies.txt --playlist-reverse --writ
 - iPhone: share sheet Shortcut -> `POST /api/quick {"url": ...}` queues everything new, or open `/?url=<link>`.
 
 ## Deployment
-`/srv/yt-shelf` (container `yt-shelf`, caddy label youtube.joost.im, `tls internal`). `scripts/deploy.sh` (rsync +
+`/srv/yt-shelf` (container `yt-shelf`, caddy label yt.joost.im, `tls internal`). `scripts/deploy.sh` (rsync +
 `docker compose up -d --build`; refuses while a job runs; never copies `data/` or `.env`). yt-dlp is upgraded to the
 newest version on each day's first build. Same server rules as kr-miner: read-only first, only `/srv/yt-shelf`, the
 `yt-shelf` container and the YouTube folder; never touch Jellyfin/Caddy/other containers; no sudo without asking.
