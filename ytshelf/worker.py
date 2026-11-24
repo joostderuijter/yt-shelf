@@ -35,6 +35,12 @@ class Worker:
     def start(self):
         self.db.q("UPDATE jobs SET state='queued', detail='restarted' WHERE state='running'")
         self.copy_cookies()
+        if self.mlib is not None:
+            try:
+                if music.migrate_singles(MUSIC, self.log):
+                    self.refresher.soon()
+            except Exception as e:
+                self.log(f'moving singles failed: {e!r}')
         for p in self.lib.stale_partials():
             p.unlink(missing_ok=True)
             self.log(f'removed leftover {p}')

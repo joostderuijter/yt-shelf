@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 AUDIO_EXT = {'.m4a', '.mp3', '.opus', '.flac', '.ogg', '.aac', '.wav'}
-SINGLES = 'Singles'
+SINGLES = 'Singles'                 # one shared album for songs that aren't part of an album
+VARIOUS = 'Various Artists'         # ...whose album artist is this, so Jellyfin shows ONE "Singles" album
 VID = re.compile(r'\[([\w-]{11})\]')
 TRACK = re.compile(r'^(\d{1,3}) - ')
 # "(Official Video)", "[MV]", "(Lyrics)", "| 4K" ... noise in music video titles
@@ -61,12 +62,17 @@ def meta(info, track=None):
         title = title or raw
     artist = artist.split(',')[0].strip() if info.get('artists') and len(info['artists']) > 1 else artist
     year = info.get('release_year') or (int(info['upload_date'][:4]) if info.get('upload_date') else None)
-    return {'artist': artist, 'album': info.get('album') or SINGLES, 'title': clean_title(title), 'year': year,
+    album = info.get('album') or SINGLES
+    return {'artist': artist, 'album': album, 'title': clean_title(title), 'year': year,
             'track': track if info.get('album') else None,
-            'all_artists': ', '.join(info.get('artists') or []) or artist}
+            'all_artists': ', '.join(info.get('artists') or []) or artist,
+            'album_artist': VARIOUS if album == SINGLES else artist}
 
 
 def out_template(root, m):
+    """Album track: <Artist>/<Album>/<NN - Title [id]>. Loose song: Singles/<Artist - Title [id]>."""
+    if m['album'] == SINGLES:
+        return Path(root) / SINGLES, f"{safe(m['artist'], 'Unknown artist')} - {safe(m['title'], 'Untitled')} [%(id)s].%(ext)s"
     d = Path(root) / safe(m['artist'], 'Unknown artist') / safe(m['album'], SINGLES)
     prefix = f"{m['track']:02d} - " if m.get('track') else ''
     return d, f"{prefix}{safe(m['title'], 'Untitled')} [%(id)s].%(ext)s"
@@ -84,7 +90,7 @@ def tag(path, m, cover=None, video_id=None):
     f = MP4(path)
     f['\xa9nam'] = [m['title']]
     f['\xa9ART'] = [m['all_artists']]
-    f['aART'] = [m['artist']]
+    f['aART'] = [m.get('album_artist') or m['artist']]
     f['\xa9alb'] = [m['album']]
     if m.get('year'):
         f['\xa9day'] = [str(m['year'])]
@@ -95,6 +101,22 @@ def tag(path, m, cover=None, video_id=None):
     if cover and Path(cover).exists():
         f['covr'] = [MP4Cover(Path(cover).read_bytes(), imageformat=MP4Cover.FORMAT_JPEG)]
     f.save()
+
+
+def read_tags(path):
+    """-> {'artist', 'album', 'title', 'track'} from the file's tags ({} if unreadable)."""
+    try:
+        from mutagen import File
+        f = File(path, easy=True)
+        if f is None or not f.tags:
+            return {}
+        first = lambda k: (f.tags.get(k) or [''])[0]
+        artist = first('albumartist') if first('albumartist') not in ('', VARIOUS) else first('artist')
+        trk = first('tracknumber').split('/')[0]
+        return {'artist': artist.split(', ')[0].strip(), 'album': first('album'), 'title': first('title'),
+                'track': int(trk) if trk.isdigit() and int(trk) else None}
+    except Exception:
+        return {}
 
 
 def cover_bytes(path):
@@ -112,6 +134,7 @@ class MusicLibrary:
     def __init__(self, root, ttl=30):
         self.root, self.ttl = Path(root), ttl
         self._cache, self._at, self._lock = None, 0, threading.Lock()
+        self._tags = {}                          # (path, mtime) -> tags
 
     def invalidate(self):
         self._at = 0
@@ -123,33 +146,41 @@ class MusicLibrary:
             return self._cache
 
     def _scan(self):
-        artists = {}
+        """Songs grouped by artist (from the tags; a Singles song belongs to its own artist)."""
+        artists, seen = {}, set()
         if not self.root.is_dir():
             return artists
-        for a in sorted(os.scandir(self.root), key=lambda e: e.name.lower()):
-            if not a.is_dir() or a.name.startswith('.'):
-                continue
-            songs = []
-            for dirpath, _, files in os.walk(a.path):
-                d = Path(dirpath)
-                album = d.name if d != Path(a.path) else ''
-                for f in files:
-                    p = d / f
-                    if p.suffix.lower() not in AUDIO_EXT or f.startswith('.'):
-                        continue
-                    st = p.stat()
-                    stem = p.stem
-                    v = VID.search(stem)
-                    t = TRACK.match(stem)
-                    title = VID.sub('', TRACK.sub('', stem)).strip()
-                    songs.append({'id': v.group(1) if v else None, 'artist': a.name, 'album': album,
-                                  'track': int(t.group(1)) if t else None, 'title': title, 'file': f,
-                                  'dir': str(d), 'rel': str(p.relative_to(self.root)), 'size': st.st_size,
-                                  'mtime': st.st_mtime})
-            songs.sort(key=lambda s: (s['album'] == SINGLES, s['album'].lower(), s['track'] or 0, s['title'].lower()))
-            artists[a.name] = {'artist': a.name, 'songs': songs, 'size': sum(s['size'] for s in songs),
-                               'latest': max((s['mtime'] for s in songs), default=0)}
-        return artists
+        for dirpath, dirs, files in os.walk(self.root):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            d = Path(dirpath)
+            for f in files:
+                p = d / f
+                if p.suffix.lower() not in AUDIO_EXT or f.startswith('.'):
+                    continue
+                st = p.stat()
+                key = (str(p), st.st_mtime)
+                seen.add(key)
+                if key not in self._tags:
+                    self._tags[key] = read_tags(p)
+                t = self._tags[key]
+                stem, v = p.stem, VID.search(p.stem)
+                rel = p.relative_to(self.root)
+                artist = t.get('artist') or (rel.parts[0] if len(rel.parts) > 2 else 'Unknown artist')
+                n = TRACK.match(stem)
+                songs = artists.setdefault(artist, [])
+                songs.append({'id': v.group(1) if v else None, 'artist': artist,
+                              'album': t.get('album') or (d.name if d != self.root else SINGLES),
+                              'track': t.get('track') or (int(n.group(1)) if n else None),
+                              'title': t.get('title') or VID.sub('', TRACK.sub('', stem)).strip(),
+                              'file': f, 'dir': str(d), 'rel': str(rel), 'size': st.st_size, 'mtime': st.st_mtime})
+        self._tags = {k: v for k, v in self._tags.items() if k in seen}
+        out = {}
+        for artist in sorted(artists, key=str.lower):
+            songs = sorted(artists[artist], key=lambda x: (x['album'] == SINGLES, x['album'].lower(), x['track'] or 0,
+                                                          x['title'].lower()))
+            out[artist] = {'artist': artist, 'songs': songs, 'size': sum(x['size'] for x in songs),
+                           'latest': max(x['mtime'] for x in songs)}
+        return out
 
     def ids(self):
         return {s['id'] for a in self.scan().values() for s in a['songs'] if s['id']}
@@ -173,3 +204,31 @@ class MusicLibrary:
                     d.rmdir()
         self.invalidate()
         return [song['file']]
+
+
+def migrate_singles(root, log=print):
+    """One-off (idempotent): songs from the old layout <Artist>/Singles/<Title [id]>.m4a move to the shared
+    Singles/<Artist - Title [id]>.m4a with album artist "Various Artists". -> number moved"""
+    from mutagen.mp4 import MP4
+    root, moved = Path(root), 0
+    for p in sorted(root.glob(f'*/{SINGLES}/*.m4a')):
+        if p.parent.parent == root / SINGLES:
+            continue
+        f = MP4(p)
+        artist = (f.get('aART') or f.get('\xa9ART') or [p.parent.parent.name])[0]
+        title = (f.get('\xa9nam') or [VID.sub('', p.stem).strip()])[0]
+        v = VID.search(p.stem)
+        dest = root / SINGLES / f"{safe(artist, 'Unknown artist')} - {safe(title, 'Untitled')}{f' [{v.group(1)}]' if v else ''}.m4a"
+        if dest.exists():
+            continue
+        f['aART'] = [VARIOUS]
+        f['\xa9alb'] = [SINGLES]
+        f.save()
+        dest.parent.mkdir(exist_ok=True)
+        p.rename(dest)
+        moved += 1
+        log(f'moved {p.relative_to(root)} -> {dest.relative_to(root)}')
+        for d in (p.parent, p.parent.parent):           # old Singles folder, then the artist folder, if now empty
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+    return moved
