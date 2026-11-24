@@ -1,0 +1,45 @@
+# yt-shelf next to Jellyfin. Lives in /srv/yt-shelf like the other apps.
+#   docker compose up -d --build      (or scripts/deploy.sh from the Mac)
+services:
+  yt-shelf:
+    build:
+      context: .
+      args:
+        YTDLP_REFRESH: ${YTDLP_REFRESH:-0}
+    container_name: yt-shelf
+    restart: unless-stopped
+    env_file: .env                         # secret: JELLYFIN_API_KEY (only used to trigger a library rescan)
+    # Every setting with its default; override in .env.
+    environment:
+      TZ: ${TZ:-Europe/Amsterdam}
+      YTSHELF_DATA: /data
+      YTSHELF_MEDIA: /media/youtube
+      YTSHELF_COOKIES: /cookies.txt
+      YTSHELF_MAX_HEIGHT: ${YTSHELF_MAX_HEIGHT:-1080}
+      YTSHELF_SUB_LANG: ${YTSHELF_SUB_LANG:-ko}                    # real subtitles only, never auto-generated
+      YTSHELF_WHISPER: ${YTSHELF_WHISPER:-1}                       # Korean video without Korean subs -> Whisper .ko.srt
+      YTSHELF_WHISPER_MODEL: ${YTSHELF_WHISPER_MODEL:-large-v3}
+      YTSHELF_WHISPER_COMPUTE: ${YTSHELF_WHISPER_COMPUTE:-int8_float16}
+      YTSHELF_WHISPER_VRAM_MB: ${YTSHELF_WHISPER_VRAM_MB:-3500}    # waits until this much GPU memory is free
+      JELLYFIN_URL: ${JELLYFIN_URL:-http://jellyfin:8096}
+    volumes:
+      - ./data:/data                                  # queue DB, Whisper model, cookies copy
+      # Jellyfin's YouTube folder, at the same path Jellyfin sees it. READ-WRITE: this app downloads and deletes here.
+      - /mnt/content1/youtube:/media/youtube
+      - /home/joost/cookies.txt:/cookies.txt:ro       # YouTube cookies (same file the manual yt-dlp commands used)
+    networks: [caddy]
+    labels:
+      caddy: youtube.joost.im
+      caddy.reverse_proxy: "{{upstreams 8780}}"
+      caddy.tls: internal
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  caddy:
+    external: true

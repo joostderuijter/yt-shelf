@@ -1,0 +1,18 @@
+[project]
+name = "yt-shelf"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.165.0",
+    "uvicorn>=0.54.0",
+    "yt-dlp[default]>=2026.8.19",
+    "faster-whisper>=1.2.1",
+    "nvidia-cublas-cu12>=12.9.3.13 ; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12>=9,<10 ; sys_platform == 'linux'",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.2.0", "httpx>=0.28"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
