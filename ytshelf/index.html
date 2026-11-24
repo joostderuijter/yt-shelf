@@ -270,15 +270,21 @@ document.addEventListener('click', async e => {
 });
 
 // ---------------------------------------------------------------- add
-let found = null, mode = 'video', modeTouched = false;
-function setMode(m) { mode = m; document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === m)); }
+let found = null, mode = 'video';
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  try { localStorage.mode = m; } catch (_) {}
+}
+try { if (localStorage.mode === 'music') setMode('music'); } catch (_) {}   // stays as you left it
 $('#mode').onclick = e => {
   const b = e.target.closest('button[data-mode]');
   if (!b) return;
-  modeTouched = true; setMode(b.dataset.mode);
+  setMode(b.dataset.mode);
   if (found) $('#addForm').requestSubmit();          // look it up again for the other library
 };
-$('#url').oninput = e => { if (!modeTouched) setMode(/music\.youtube\.com/.test(e.target.value) ? 'music' : 'video'); };
+// the only automatic switch: a music.youtube.com link -> Music. Never back to Video by itself.
+$('#url').oninput = e => { if (/music\.youtube\.com/.test(e.target.value)) setMode('music'); };
 $('#addForm').onsubmit = async e => {
   e.preventDefault();
   const url = $('#url').value.trim();
@@ -305,7 +311,7 @@ $('#addForm').onsubmit = async e => {
       ev.target.disabled = true;
       const r = await api('/api/add', { mode, entries: fresh.map(x => ({ id: x.id, title: x.title, track: x.track })) });
       $('#preview').innerHTML = `<span class="muted">Queued ${r.queued} video${r.queued === 1 ? '' : 's'}.</span>`;
-      $('#url').value = ''; found = null; modeTouched = false;
+      $('#url').value = ''; found = null;
       loadJobs();
     };
   } catch (err) {
