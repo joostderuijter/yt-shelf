@@ -12,5 +12,5 @@ if [[ "${1:-}" != "--force" ]] && grep -q '"state":"running"' <<<"$busy"; then
 fi
 rsync -a --exclude .git --exclude data --exclude .env --exclude .venv --exclude .pytest_cache --exclude __pycache__ \
   --exclude .claude ./ "$HOST:$DIR/"
-ssh "$HOST" "cd $DIR && YTDLP_REFRESH=$(date +%F) docker compose up -d --build 2>&1 | tail -1 &&
-  until curl -sk -m 3 -o /dev/null https://youtube.joost.im/health; do sleep 1; done && echo up"
+ssh "$HOST" "mkdir -p $DIR/data && cd $DIR && YTDLP_REFRESH=$(date +%F) docker compose up -d --build 2>&1 | tail -1 &&
+  for i in \$(seq 60); do curl -skf -m 3 -o /dev/null https://youtube.joost.im/health && echo up && exit 0; sleep 2; done; echo NOT UP; docker logs --tail 20 yt-shelf; exit 1"
