@@ -1,7 +1,10 @@
-"""Tell Jellyfin to rescan its YouTube/music libraries after a download or delete. That's all this app does there."""
+"""Jellyfin: rescan our libraries after a download or delete, and read (never change) what the user has watched."""
 import json
 import threading
 import urllib.request
+
+import os
+import time
 
 from .config import JELLYFIN_API_KEY, JELLYFIN_URL
 
@@ -29,6 +32,36 @@ def refresh_library():
         return 'rescanning ' + ', '.join(l['Name'] for l in libs)
     _req('/Library/Refresh', 'POST')
     return 'rescanning all libraries'
+
+
+_watch = {'at': 0, 'data': {}}
+
+
+def watch_states(ttl=30):
+    """{file path as Jellyfin sees it: {'played': bool, 'pct': 0-100}} for the YouTube library, for JELLYFIN_USER
+    (default: the first admin). Cached `ttl` seconds; {} when Jellyfin can't be reached."""
+    if time.time() - _watch['at'] < ttl:
+        return _watch['data']
+    data = {}
+    try:
+        users = _req('/Users') or []
+        name = os.environ.get('JELLYFIN_USER', '')
+        user = next((u for u in users if u['Name'] == name), None) or \
+            next((u for u in users if u.get('Policy', {}).get('IsAdministrator')), None) or (users[0] if users else None)
+        lib = next((f for f in _req('/Library/VirtualFolders') or []
+                    if any(loc.rstrip('/') == LIBRARY_PATHS[0] for loc in f.get('Locations') or [])), None)
+        if user and lib:
+            r = _req(f"/Users/{user['Id']}/Items?ParentId={lib['ItemId']}&Recursive=true&IncludeItemTypes=Episode"
+                     '&Fields=Path&EnableUserData=true&EnableImages=false')
+            for it in r.get('Items') or []:
+                ud = it.get('UserData') or {}
+                if it.get('Path') and (ud.get('Played') or ud.get('PlayedPercentage')):
+                    data[it['Path']] = {'played': bool(ud.get('Played')), 'pct': round(ud.get('PlayedPercentage') or 0)}
+    except Exception as e:
+        print(f'jellyfin watch states: {e!r}')
+        return _watch['data']
+    _watch.update(at=time.time(), data=data)
+    return data
 
 
 class Refresher:

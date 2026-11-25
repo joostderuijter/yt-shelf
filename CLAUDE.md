@@ -28,6 +28,12 @@ Before this app the user ran yt-dlp by hand (see "Folder layout").
 - Layout `<Artist>/<Album or Singles>/<NN - >Title [id].m4a`. A YouTube Music album link ("Album - ..." playlist) gives
   track numbers. Playlists just download songs (no Jellyfin playlists; user's choice). No Whisper for music.
 
+## Watch status (2026-11-25)
+- Read-only from Jellyfin (`jellyfin.watch_states`, cached 30 s): played + % for the YouTube library, for JELLYFIN_USER
+  (default: first admin = `root`), matched by file path (same `/media/youtube` paths in both containers).
+- Page: "✓ Watched" + dimmed thumbnail, red progress bar for half-watched, "N watched" per channel, "Hide watched"
+  switch per channel view (remembered in localStorage).
+
 ## Folder layout (= the user's old yt-dlp commands)
 `<channel>/Season 1/S01E0443 - <title> [<videoId>].mkv` + `.webp` thumbnail + `.ko.srt`, subs and thumbnail also
 embedded. Old command: `yt-dlp --cookies ~/cookies.txt --playlist-reverse --write-subs --sub-langs ko --sub-format srt

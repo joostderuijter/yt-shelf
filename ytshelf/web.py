@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from . import music, ytdl
 from .config import DATA, MEDIA, MUSIC
 from .db import DB
-from .jellyfin import Refresher
+from .jellyfin import Refresher, watch_states
 from .library import Library, disk
 from .worker import Worker
 
@@ -40,20 +40,23 @@ def whisper_ids():
     return {r['video_id'] for r in db.all('SELECT video_id FROM whisper_subs')}
 
 
-def video_json(v, wids):
+def video_json(v, wids, watched=None):
+    w = (watched or {}).get(str(Path(v['dir']) / v['file']), {})
     return {'id': v['id'], 'channel': v['channel'], 'file': v['file'], 'title': v['title'], 'season': v['season'],
             'number': v['number'], 'size': v['size'], 'mtime': v['mtime'], 'thumb': bool(v['thumb']),
-            'subs': v['subs'], 'whisper': v['id'] in wids}
+            'subs': v['subs'], 'whisper': v['id'] in wids, 'played': w.get('played', False), 'pct': w.get('pct', 0)}
 
 
 @app.get('/api/overview')
 def overview():
-    chans, arts = lib.scan(), mlib.scan()
+    chans, arts, watched = lib.scan(), mlib.scan(), watch_states()
     return {'disk': disk(MEDIA), 'size': sum(c['size'] for c in chans.values()),
             'music_size': sum(a['size'] for a in arts.values()),
             'songs': sum(len(a['songs']) for a in arts.values()), 'artists': len(arts),
             'videos': sum(len(c['videos']) for c in chans.values()),
             'channels': sorted(({'folder': c['folder'], 'videos': len(c['videos']), 'size': c['size'],
+                                 'watched': sum(watched.get(str(Path(v['dir']) / v['file']), {}).get('played', False)
+                                                for v in c['videos']),
                                  'latest': c['latest'],
                                  'thumb': next(({'file': v['file']} for v in c['videos'] if v['thumb']), None)}
                                 for c in chans.values()), key=lambda c: -c['latest'])}
@@ -64,8 +67,8 @@ def channel(folder: str):
     c = lib.scan().get(folder)
     if c is None:
         raise HTTPException(404)
-    wids = whisper_ids()
-    return {'folder': folder, 'size': c['size'], 'videos': [video_json(v, wids) for v in c['videos']]}
+    wids, watched = whisper_ids(), watch_states()
+    return {'folder': folder, 'size': c['size'], 'videos': [video_json(v, wids, watched) for v in c['videos']]}
 
 
 @app.get('/api/search')
@@ -75,7 +78,8 @@ def search(q: str):
     hits = [v for c in lib.scan().values() for v in c['videos'] if q and q in v['title'].lower()]
     songs = [x for a in mlib.scan().values() for x in a['songs']
              if q and (q in x['title'].lower() or q in x['artist'].lower() or q in x['album'].lower())]
-    return {'videos': [video_json(v, wids) for v in hits[:200]], 'more': max(0, len(hits) - 200),
+    watched = watch_states()
+    return {'videos': [video_json(v, wids, watched) for v in hits[:200]], 'more': max(0, len(hits) - 200),
             'songs': [song_json(x) for x in songs[:200]]}
 
 

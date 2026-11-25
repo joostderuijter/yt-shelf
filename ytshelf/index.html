@@ -61,6 +61,16 @@
   .v img, .v .noimg { width:128px; aspect-ratio:16/9; object-fit:cover; border-radius:6px; background:#111; flex:none; }
   @media (max-width:560px) { .v img, .v .noimg { width:92px; } .v { flex-wrap:wrap; } .v .acts { width:100%; justify-content:flex-end; } }
   .v .main { flex:1; min-width:0; }
+  .thumbw { position:relative; flex:none; border-radius:6px; overflow:hidden; line-height:0; }
+  .thumbw img, .thumbw .noimg { display:block; }
+  .thumbw .pbar { position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(255,255,255,.25); }
+  .thumbw .pbar i { display:block; height:100%; background:var(--accent); }
+  .thumbw .check { position:absolute; top:4px; right:4px; background:rgba(0,0,0,.75); color:#fff; font-size:11px;
+                   line-height:1; padding:3px 6px; border-radius:99px; font-weight:600; }
+  .v.played .thumbw img { opacity:.45; }
+  .v.played .t { color:var(--muted); }
+  .tag.seen { background:rgba(255,92,92,.15); color:#ffb0b0; }
+  label.toggle { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer; flex:none; }
   .v .t { line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .v .d { font-size:12px; color:var(--muted); margin-top:3px; }
   .v .acts { display:flex; gap:6px; flex:none; }
@@ -153,7 +163,7 @@ async function showHome() {
       <a class="ch" href="#ch/${enc(c.folder)}">
         <div class="img" ${c.thumb ? `style="background-image:url('${thumbUrl(c.folder, c.thumb.file)}')"` : ''}></div>
         <div class="t">${esc(c.folder)}</div>
-        <div class="s">${c.videos} videos · ${size(c.size)}</div></a>`).join('') ||
+        <div class="s">${c.videos} videos${c.watched ? ` · ${c.watched} watched` : ''} · ${size(c.size)}</div></a>`).join('') ||
       '<div class="empty">Nothing downloaded yet.</div>'}</div>`;
   let t = null;
   $('#q').oninput = e => {
@@ -169,12 +179,23 @@ async function showHome() {
   };
 }
 
+function hideWatched() { try { return localStorage.hideWatched === '1'; } catch (_) { return false; } }
+
 async function showChannel(folder) {
   const [c] = await Promise.all([api('/api/channel/' + enc(folder)), loadOverview()]);
+  const seen = c.videos.filter(v => v.played).length;
+  const render = () => {
+    const vs = hideWatched() ? c.videos.filter(v => !v.played) : c.videos;
+    $('#list').innerHTML = vs.length ? videoList(vs, false) : '<div class="empty">Nothing left to watch here.</div>';
+  };
   $('#view').innerHTML = `
     <h2><span><a href="#" class="muted">Videos</a> › ${esc(folder)}</span>
-      <span class="muted" style="flex:none">${c.videos.length} videos · ${size(c.size)}</span></h2>
-    ${c.videos.length ? videoList(c.videos, false) : '<div class="empty">No videos.</div>'}`;
+      <span class="muted" style="flex:none">${c.videos.length} videos · ${seen} watched · ${size(c.size)}</span></h2>
+    <div class="row" style="justify-content:flex-end;margin:-2px 0 8px">
+      <label class="toggle"><input type="checkbox" id="hideW" ${hideWatched() ? 'checked' : ''}> Hide watched</label></div>
+    <div id="list"></div>`;
+  $('#hideW').onchange = e => { try { localStorage.hideWatched = e.target.checked ? '1' : '0'; } catch (_) {} render(); };
+  render();
 }
 
 const tabs = on => `<div class="tabs"><a href="#" class="${on === 'video' ? 'on' : ''}">Videos</a>
@@ -237,11 +258,14 @@ function videoList(vs, withChannel) {
   return `<ul class="vids">${vs.map(v => {
     const ko = v.subs.some(s => s === 'ko' || s.startsWith('ko-'));
     const ep = v.number != null ? (v.season === 0 ? 'Special ' : 'E') + String(v.number).padStart(4, '0') : '';
-    return `<li class="v" data-ch="${esc(v.channel)}" data-file="${esc(v.file)}">
-      ${v.thumb ? `<img loading="lazy" src="${thumbUrl(v.channel, v.file)}" alt="">` : '<div class="noimg"></div>'}
+    const prog = !v.played && v.pct > 0 ? `<div class="pbar"><i style="width:${v.pct}%"></i></div>` : '';
+    return `<li class="v${v.played ? ' played' : ''}" data-ch="${esc(v.channel)}" data-file="${esc(v.file)}">
+      <div class="thumbw">${v.thumb ? `<img loading="lazy" src="${thumbUrl(v.channel, v.file)}" alt="">` : '<div class="noimg"></div>'}
+        ${v.played ? '<span class="check">✓ Watched</span>' : ''}${prog}</div>
       <div class="main"><div class="t">${esc(v.title)}</div>
         <div class="d">${withChannel ? esc(v.channel) + ' · ' : ''}${ep} · added ${day(v.mtime)} · ${size(v.size)}
-          ${ko ? `<span class="tag ko">${v.whisper ? 'KO subs · Whisper' : 'KO subs'}</span>` : ''}</div></div>
+          ${ko ? `<span class="tag ko">${v.whisper ? 'KO subs · Whisper' : 'KO subs'}</span>` : ''}
+          ${!v.played && v.pct > 0 ? `<span class="tag seen">${v.pct}% watched</span>` : ''}</div></div>
       <div class="acts">
         ${ko ? '' : '<button data-act="subs" title="Make Korean subtitles with Whisper">🎙 KO subs</button>'}
         <button data-act="del">Delete</button></div></li>`;
